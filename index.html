@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Навигация</title>
+    <style>
+        /* ----- БАЗА ----- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #faf6f0;
+            background: radial-gradient(circle at 30% 20%, #fcf8f2, #f0ebe3);
+            font-family: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+            padding: 24px;
+            margin: 0;
+        }
+
+        /* ----- КОНТЕЙНЕР КНОПОК ----- */
+        .button-group {
+            display: flex;
+            flex-direction: row;
+            gap: 32px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        /* ----- КАЖДАЯ КНОПКА (обёртка для ссылки) ----- */
+        .btn-wrapper {
+            flex: 1 1 200px;
+            min-width: 180px;
+            max-width: 280px;
+            text-decoration: none;
+            display: block;
+        }
+
+        .btn {
+            position: relative;
+            width: 100%;
+            padding: 30px 18px;
+            border: none;
+            border-radius: 80px;
+            background: #f2ebe1;
+            color: #4a3e35;
+            font-size: 2.2rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            box-shadow: 0 16px 32px -8px rgba(120, 90, 70, 0.15),
+                        0 4px 12px rgba(0, 0, 0, 0.02);
+            transition: box-shadow 0.25s ease, transform 0.2s ease, background 0.3s ease;
+            cursor: pointer;
+            backdrop-filter: blur(2px);
+            border: 1px solid rgba(255, 245, 235, 0.5);
+            overflow: visible;
+            will-change: transform, box-shadow;
+            text-decoration: none;
+            color: #4a3e35;
+        }
+
+        /* Индивидуальные оттенки (бежевая гамма) */
+        .btn-1 {
+            background: linear-gradient(145deg, #f6ede4, #ede1d4);
+            color: #5a4a3a;
+            box-shadow: 0 16px 32px -8px #dacfc2;
+        }
+        .btn-2 {
+            background: linear-gradient(145deg, #f3ebe1, #e8dbcf);
+            color: #4f4033;
+            box-shadow: 0 16px 32px -8px #d6c8b8;
+        }
+        .btn-3 {
+            background: linear-gradient(145deg, #f0e6db, #e4d6c7);
+            color: #4d3d2f;
+            box-shadow: 0 16px 32px -8px #cdbcab;
+        }
+
+        /* ----- ПЕРЕЛИВЫ ПРИ НАВЕДЕНИИ ----- */
+        .btn:hover {
+            transform: scale(1.04) translateY(-4px);
+            box-shadow: 0 28px 48px -12px rgba(140, 110, 85, 0.3),
+                        0 0 0 1px rgba(255, 235, 215, 0.6);
+            border-color: rgba(255, 235, 215, 0.7);
+        }
+
+        .btn-1:hover {
+            background: linear-gradient(145deg, #fcf1e6, #f0e2d3);
+            box-shadow: 0 28px 48px -12px #ccb9a8, 0 0 0 1px #f7e4d4;
+        }
+        .btn-2:hover {
+            background: linear-gradient(145deg, #faf0e5, #ecddd0);
+            box-shadow: 0 28px 48px -12px #cbbaaa, 0 0 0 1px #f3e2d2;
+        }
+        .btn-3:hover {
+            background: linear-gradient(145deg, #f7ece0, #e8d8c9);
+            box-shadow: 0 28px 48px -12px #c5b3a1, 0 0 0 1px #efddcd;
+        }
+
+        /* ----- ПРОЖИМАНИЕ ПРИ КЛИКЕ ----- */
+        .btn:active {
+            transform: scale(0.93) translateY(2px);
+            box-shadow: 0 6px 16px -2px rgba(100, 75, 55, 0.2),
+                        0 0 0 1px rgba(200, 175, 155, 0.3);
+            transition-duration: 0.06s;
+        }
+
+        /* ----- ИСКРЫ (SPARKLES) ----- */
+(function() {
+        "use strict";
+
+        // Все кнопки
+        const buttons = document.querySelectorAll('.btn');
+
+        // Функция создания искр
+        function createSparkles(btnElement, event) {
+            const sparkleContainer = btnElement.querySelector('.sparkle-container');
+            if (!sparkleContainer) return;
+
+            const rect = btnElement.getBoundingClientRect();
+            let x, y;
+            if (event && event.clientX !== undefined) {
+                x = event.clientX - rect.left;
+                y = event.clientY - rect.top;
+            } else {
+                x = rect.width / 2;
+                y = rect.height / 2;
+            }
+
+            const count = 14 + Math.floor(Math.random() * 10);
+            const fragment = document.createDocumentFragment();
+
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * 2 * Math.PI;
+                const distance = 60 + Math.random() * 120;
+                const tx = Math.cos(angle) * distance;
+                const ty = Math.sin(angle) * distance - 20;
+
+                const isStar = Math.random() < 0.3;
+                const sparkle = document.createElement('div');
+
+                if (isStar) {
+                    sparkle.className = 'sparkle-star';
+                    const size = 8 + Math.random() * 12;
+                    sparkle.style.width = size + 'px';
+                    sparkle.style.height = size + 'px';
+                } else {
+                    sparkle.className = 'sparkle';
+                    const size = 6 + Math.random() * 14;
+                    sparkle.style.width = size + 'px';
+                    sparkle.style.height = size + 'px';
+                }
+
+                const offsetX = (Math.random() - 0.5) * 30;
+                const offsetY = (Math.random() - 0.5) * 30;
+                sparkle.style.left = (x + offsetX) + 'px';
+                sparkle.style.top = (y + offsetY) + 'px';
+
+                sparkle.style.setProperty('--tx', tx + 'px');
+                sparkle.style.setProperty('--ty', ty + 'px');
+
+                const delay = Math.random() * 0.15;
+                sparkle.style.animationDelay = delay + 's';
+
+                const hue = 30 + Math.random() * 20;
+                const sat = 40 + Math.random() * 40;
+                const lig = 75 + Math.random() * 20;
+                sparkle.style.background = `hsl(${hue}, ${sat}%, ${lig}%)`;
+                if (!isStar) {
+                    sparkle.style.boxShadow = `0 0 24px 8px hsla(${hue}, 70%, 70%, 0.5)`;
+                }
+
+                fragment.appendChild(sparkle);
+            }
+
+            sparkleContainer.innerHTML = '';
+            sparkleContainer.appendChild(fragment);
+
+            setTimeout(() => {
+                if (sparkleContainer) {
+                    sparkleContainer.innerHTML = '';
+                }
+            }, 1200);
+        }
+
+        // Обработчик клика на каждой кнопке
+        buttons.forEach((btn) => {
+            btn.addEventListener('click', function(e) {
+                createSparkles(this, e);
+                // Не отменяем переход, т.к. ссылка открывается в новой вкладке (target="_blank")
+                // Искры успевают проиграться, т.к. переход происходит с небольшой задержкой
+                // но чтобы точно увидеть искры — оставляем как есть.
+            });
+        });
+
+        // Приветственные искры на первой кнопке при загрузке
+        window.addEventListener('load', function() {
+            const firstBtn = document.querySelector('.btn');
+            if (firstBtn) {
+                setTimeout(() => {
+                    createSparkles(firstBtn, null);
+                }, 400);
+                setTimeout(() => {
+                    createSparkles(firstBtn, null);
+                }, 900);
+            }
+        });
+
+    })();
+</script>
+
+</body>
+</html>
