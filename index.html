@@ -667,7 +667,7 @@ td input[type=text]:focus{background:var(--blue2)}
  <div class="section-head">
    <div>
      <h2 class="section-title">📊 Эксп. Dash</h2>
-     <div class="section-sub">Статистика, анализ и выводы · автообновление раз в 15 секунд</div>
+     <div class="section-sub">Статистика, анализ и выводы · автообновление раз в 30 секунд</div>
    </div>
    <div class="section-actions">
      <button class="btn" onclick="renderDashboard()">↻ Пересчитать</button>
@@ -802,11 +802,128 @@ let expenseDraftLoaded=false;
 let openExpenseHistoryIds=new Set();
 let remindersRows=[];
 
+/* === ЛЕНИВАЯ ЗАГРУЗКА ПО СЕКЦИЯМ === */
+// Каждая секция регистрирует свою функцию обновления. Таймер автообновления
+// запускается только для активной секции и очищается при переходе на другую.
+const AUTO_REFRESH_MS = 30000;
+let activeSectionId = null;
+let sectionRefreshTimer = null;
+
+// Какие таблицы нужны каждой секции (для частичной загрузки).
+// null = не делать доп. запросов, только перерисовать из текущего состояния.
+const sectionLoaders = {
+  orders:   async () => { await loadOrdersSlice();     renderOrders(); renderArchivePanel(); },
+  dodelki:  async () => { await loadDodelkiSlice();    renderDodelki(); },
+  ordered:  async () => { await loadOrderedSlice();    renderOrdered(); },
+  schedule: async () => { await loadScheduleSlice();   renderScheduleAll(); },
+  dashboard:async () => { await loadAll(true);         renderDashboard(); },
+  expenses: async () => { await loadExpensesSlice();   renderExpenseRows(); renderExpenseTotal(); renderExpenseHistory(); },
+  reminders:async () => { await loadRemindersSlice();  renderReminders(); renderHomeDate(); }
+};
+
+/* Точечные загрузки — вместо семи таблиц сразу, тянем только то, что нужно секции. */
+async function loadOrdersSlice(){
+  try{
+    const [ps,os]=await Promise.all([
+      api('periods?select=*&order=sort_order.asc'),
+      api('orders?select=*&order=sort_order.asc')
+    ]);
+    ordersData=ps.map(p=>({id:p.id,period:p.title,rows:os.filter(o=>o.period_id===p.id).map(o=>({id:o.id,number:o.number,product:o.product,address:o.address,ldsp:o.ldsp,furniture:o.furniture,facades:o.facades,assembly_ready:o.assembly_ready,assembler:o.assembler,installer:o.installer,note:o.note,ready:o.ready,created_at:o.created_at,updated_at:o.updated_at})),archived:!!p.archived}));
+    setStatus('● Онлайн',true);
+  }catch(e){ console.error('[loadOrdersSlice]',e); setStatus('Ошибка загрузки',false); }
+}
+async function loadDodelkiSlice(){
+  try{
+    dodelkiRows=await api('dodelki?select=*&order=completed.asc,sort_order.asc,created_at.asc');
+    setStatus('● Онлайн',true);
+  }catch(e){ console.error('[loadDodelkiSlice]',e); setStatus('Ошибка загрузки',false); }
+}
+async function loadOrderedSlice(){
+  try{
+    orderedRows=await api('ordered_positions?select=*&order=sort_order.asc');
+    setStatus('● Онлайн',true);
+  }catch(e){ console.error('[loadOrderedSlice]',e); setStatus('Ошибка загрузки',false); }
+}
+async function loadScheduleSlice(){
+  try{
+    const [os,dr]=await Promise.all([
+      api('orders?select=*&order=sort_order.asc'),
+      api('dodelki?select=*&order=completed.asc,sort_order.asc,created_at.asc')
+    ]);
+    // Восстанавливаем минимально нужные поля для пула заказов и доделок.
+    // Полная структура periods/orders не требуется — schedule использует только строки заказов.
+    // Но для сохранения совместимости с scheduleBricks() держим ordersData в форме периодов.
+    // Поэтому — просто перезагрузим periods тоже.
+    const ps=await api('periods?select=*&order=sort_order.asc');
+    ordersData=ps.map(p=>({id:p.id,period:p.title,rows:os.filter(o=>o.period_id===p.id).map(o=>({id:o.id,number:o.number,product:o.product,address:o.address,ldsp:o.ldsp,furniture:o.furniture,facades:o.facades,assembly_ready:o.assembly_ready,assembler:o.assembler,installer:o.installer,note:o.note,ready:o.ready,created_at:o.created_at,updated_at:o.updated_at})),archived:!!p.archived}));
+    dodelkiRows=dr;
+    await loadScheduleState();
+    setStatus('● Онлайн',true);
+  }catch(e){ console.error('[loadScheduleSlice]',e); setStatus('Ошибка загрузки',false); }
+}
+async function loadExpensesSlice(){
+  try{
+    const [ex,ed]=await Promise.all([
+      api('expenses?select=*&order=created_at.desc'),
+      api('expense_drafts?id=eq.1&select=*')
+    ]);
+    expenseHistory=Array.isArray(ex)?ex:[];
+    if(!expenseDraftLoaded || !isEditing()){
+      const draft=Array.isArray(ed)&&ed[0]?ed[0]:null;
+      expenseRows=draft&&Array.isArray(draft.items)?draft.items.map(x=>({date:x.date||'',description:x.description||'',amount:x.amount??''})):[];
+      const bal=draft?parseNum(draft.balance):0;
+      const be=document.getElementById('expenseBalance');
+      if(be)be.value=bal?String(bal):'';
+      expenseDraftLoaded=true;
+    }
+    setStatus('● Онлайн',true);
+  }catch(e){ console.error('[loadExpensesSlice]',e); setStatus('Ошибка загрузки',false); }
+}
+async function loadRemindersSlice(){
+  try{
+    remindersRows=await api('reminders?select=*&order=event_date.asc,created_at.asc');
+    setStatus('● Онлайн',true);
+  }catch(e){ console.error('[loadRemindersSlice]',e); setStatus('Ошибка загрузки',false); }
+}
+
+// Останавливает автообновление предыдущей секции.
+function stopSectionRefresh(){
+  if(sectionRefreshTimer){ clearInterval(sectionRefreshTimer); sectionRefreshTimer=null; }
+}
+// Запускает автообновление для конкретной секции.
+function startSectionRefresh(id){
+  stopSectionRefresh();
+  activeSectionId=id;
+  const loader=sectionLoaders[id];
+  if(!loader) return;
+  // Первый прогон — сразу (без ожидания таймера), но не блокируем UI.
+  Promise.resolve().then(()=>{ if(activeSectionId===id) loader().catch(()=>{}); });
+  sectionRefreshTimer=setInterval(()=>{
+    if(isEditing()) return;                 // не мешаем вводу
+    if(document.hidden) return;             // вкладка не активна — пропускаем
+    if(activeSectionId!==id) return;        // секция уже сменилась — не трогаем
+    loader().catch(()=>{});
+  }, AUTO_REFRESH_MS);
+}
+
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const isEditing=()=>{const e=document.activeElement;return !!e&&(e.tagName==='INPUT'||e.tagName==='TEXTAREA'||e.tagName==='SELECT')};
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.add('hidden'),2600)}
 function setStatus(text,ok=true){const e=document.getElementById('globalStatus');e.textContent=text;e.className='status '+(ok?'online':'offline')}
-async function api(path,opt={}){const r=await fetch(URL+'/rest/v1/'+path,{...opt,headers:{...H,...(opt.headers||{})}});if(!r.ok)throw Error(await r.text());return r.status===204?null:r.json()}
+async function api(path,opt={}){
+ const r=await fetch(URL+'/rest/v1/'+path,{...opt,headers:{...H,...(opt.headers||{})}});
+ const raw=r.status===204?'':await r.text();
+ if(!r.ok){
+   let detail=raw;
+   try{const j=raw?JSON.parse(raw):null;detail=j?.message||j?.hint||j?.details||j?.error||raw}catch(_){}
+   const err=new Error(`${r.status} ${detail||r.statusText||'Request failed'}`);
+   err.status=r.status;err.path=path;
+   throw err;
+ }
+ if(!raw)return null;
+ try{return JSON.parse(raw)}catch(_){return raw}
+}
+function apiErrorText(label,e){return `${label}: ${e?.message||String(e)}`}
 
 /* === ТЕМА === */
 function applyTheme(theme){
@@ -847,7 +964,7 @@ function renderDodelki(){
 function dodelkaTableRow(r){const i=dodelkiRows.indexOf(r);return `<tr class="${r.completed?'completed':''}"><td><input type="text" value="${esc(r.order_number)}" onchange="editDodelka(${i},'order_number',this.value)"></td><td><input type="text" value="${esc(r.address)}" onchange="editDodelka(${i},'address',this.value)"></td><td><input type="text" value="${esc(r.description)}" onchange="editDodelka(${i},'description',this.value)"></td><td><input type="text" value="${esc(r.installer)}" onchange="editDodelka(${i},'installer',this.value)"></td><td class="center"><input class="done-check" type="checkbox" ${r.completed?'checked':''} onchange="completeDodelka(${i},this.checked)"></td><td><button class="delete" onclick="delDodelka(${i})">×</button></td></tr>`}
 function dodelkaMobileRow(r){const i=dodelkiRows.indexOf(r);return `<div class="m-row ${r.completed?'completed':''}"><div class="m-grid"><div class="m-field"><div class="m-label">№ заказа</div><input class="m-input" value="${esc(r.order_number)}" onchange="editDodelka(${i},'order_number',this.value)"></div><div class="m-field"><div class="m-label">Монтажник</div><input class="m-input" value="${esc(r.installer)}" onchange="editDodelka(${i},'installer',this.value)"></div><div class="m-field wide"><div class="m-label">Адрес</div><input class="m-input" value="${esc(r.address)}" onchange="editDodelka(${i},'address',this.value)"></div><div class="m-field wide"><div class="m-label">Описание</div><input class="m-input" value="${esc(r.description)}" onchange="editDodelka(${i},'description',this.value)"></div></div><div class="m-actions"><label class="m-ready"><input class="done-check" type="checkbox" ${r.completed?'checked':''} onchange="completeDodelka(${i},this.checked)"> Готово</label><button class="delete" onclick="delDodelka(${i})">Удалить ×</button></div></div>`}
 async function editDodelka(i,k,v){dodelkiRows[i][k]=v;try{await api('dodelki?id=eq.'+dodelkiRows[i].id,{method:'PATCH',body:JSON.stringify({[k]:v,updated_at:new Date().toISOString()})})}catch(e){toast('Ошибка сохранения')}}
-async function completeDodelka(i,v){dodelkiRows[i].completed=v;renderDodelki();renderBrickSources();try{await api('dodelki?id=eq.'+dodelkiRows[i].id,{method:'PATCH',body:JSON.stringify({completed:v,updated_at:new Date().toISOString()})});await loadAll(true)}catch(e){toast('Ошибка сохранения')}}
+async function completeDodelka(i,v){dodelkiRows[i].completed=v;renderDodelki();renderBrickSources();try{await api('dodelki?id=eq.'+dodelkiRows[i].id,{method:'PATCH',body:JSON.stringify({completed:v,updated_at:new Date().toISOString()})})}catch(e){toast('Ошибка сохранения')}}
 async function addDodelka(){try{const x=await api('dodelki',{method:'POST',body:JSON.stringify({sort_order:dodelkiRows.length})});dodelkiRows.push(x[0]);renderDodelki();renderBrickSources()}catch(e){toast('Не удалось добавить строку')}}
 async function delDodelka(i){if(!confirm('Удалить эту доделку?'))return;try{await api('dodelki?id=eq.'+dodelkiRows[i].id,{method:'DELETE'});dodelkiRows.splice(i,1);renderDodelki();renderBrickSources()}catch(e){toast('Ошибка удаления')}}
 
@@ -1000,16 +1117,25 @@ async function clearSchedule(){
 
 /* === ЗАКАЗЫ === */
 function blankOrder(){return{number:'',product:'',address:'',ldsp:false,furniture:false,facades:false,assembly_ready:false,assembler:'',installer:'',note:'',ready:false}}
+
+/* Полная загрузка — нужна при старте (для главной, графика и dashboard),
+   а также как резерв для dashboard. Секции с ленивой загрузкой её не вызывают. */
 async function loadAll(silent=false){
- if(refreshBusy)return;refreshBusy=true;try{
+ if(refreshBusy)return;refreshBusy=true;
+ const errors=[];
+ const get=async(label,path,fallback)=>{
+   try{return await api(path)}
+   catch(e){console.error('[Rubanok]',label,path,e);errors.push(apiErrorText(label,e));return fallback}
+ };
+ try{
   const [ps,os,dr,op,ex,ed,rm]=await Promise.all([
-    api('periods?select=*&order=sort_order.asc'),
-    api('orders?select=*&order=sort_order.asc'),
-    api('dodelki?select=*&order=completed.asc,sort_order.asc,created_at.asc'),
-    api('ordered_positions?select=*&order=sort_order.asc'),
-    api('expenses?select=*&order=created_at.desc').catch(()=>[]),
-    api('expense_drafts?id=eq.1&select=*').catch(()=>[]),
-    api('reminders?select=*&order=event_date.asc,created_at.asc').catch(()=>[])
+    get('Заказы — периоды','periods?select=*&order=sort_order.asc',[]),
+    get('Заказы — строки','orders?select=*&order=sort_order.asc',[]),
+    get('Доделки','dodelki?select=*&order=completed.asc,sort_order.asc,created_at.asc',[]),
+    get('Заказные позиции','ordered_positions?select=*&order=sort_order.asc',[]),
+    get('Расходы — история','expenses?select=*&order=created_at.desc',[]),
+    get('Расходы — черновик','expense_drafts?id=eq.1&select=*',[]),
+    get('Напоминания','reminders?select=*&order=event_date.asc,created_at.asc',[])
   ]);
   ordersData=ps.map(p=>({id:p.id,period:p.title,rows:os.filter(o=>o.period_id===p.id).map(o=>({id:o.id,number:o.number,product:o.product,address:o.address,ldsp:o.ldsp,furniture:o.furniture,facades:o.facades,assembly_ready:o.assembly_ready,assembler:o.assembler,installer:o.installer,note:o.note,ready:o.ready,created_at:o.created_at,updated_at:o.updated_at})),archived:!!p.archived}));
   dodelkiRows=dr;orderedRows=op;expenseHistory=Array.isArray(ex)?ex:[];remindersRows=Array.isArray(rm)?rm:[];
@@ -1021,8 +1147,19 @@ async function loadAll(silent=false){
     if(be)be.value=bal?String(bal):'';
     expenseDraftLoaded=true;
   }
-  renderOrders();renderArchivePanel();renderDodelki();renderOrdered();renderScheduleAll();renderDashboard();renderExpenseRows();renderExpenseTotal();renderExpenseHistory();renderReminders();renderHomeDate();setStatus('● Онлайн',true)
- }catch(e){setStatus('Ошибка соединения',false);if(!silent)toast('Не удалось загрузить данные')}finally{refreshBusy=false}
+  renderOrders();renderArchivePanel();renderDodelki();renderOrdered();renderScheduleAll();renderDashboard();renderExpenseRows();renderExpenseTotal();renderExpenseHistory();renderReminders();renderHomeDate();
+  if(errors.length){
+    setStatus('Ошибка загрузки',false);
+    console.error('[Rubanok] Ошибки загрузки:',errors);
+    if(!silent)toast('Не загрузилось: '+errors.join(' · '));
+  }else{
+    setStatus('● Онлайн',true);
+  }
+ }catch(e){
+  console.error('[Rubanok] Критическая ошибка загрузки',e);
+  setStatus('Ошибка соединения',false);
+  if(!silent)toast('Не удалось загрузить данные: '+(e?.message||e));
+ }finally{refreshBusy=false}
 }
 function periodOpen(id){return localStorage.getItem('period_'+id)!=='closed'}function setPeriodOpen(id,open){localStorage.setItem('period_'+id,open?'open':'closed')}
 function orderMatches(r,q){return !q||[r.number,r.product,r.address].some(v=>String(v||'').toLowerCase().includes(q.toLowerCase()))}
@@ -1247,7 +1384,8 @@ async function commitExpenses(){
     expenseRows=[];document.getElementById('expenseBalance').value=newBalance?String(newBalance):'';
     renderExpenseRows();renderExpenseTotal();
     await clearExpenseDraft(newBalance);
-    await loadAll(true);
+    await loadExpensesSlice();
+    renderExpenseHistory();
     toast(zeroOut?'Сохранено · баланс обнулён':'Сохранено · итог перенесён в баланс');
   }catch(e){
     toast('Не удалось сохранить. Проверьте таблицы расходов в Supabase.');
@@ -1308,7 +1446,6 @@ function toggleExpenseHistory(id){
 
 /* === НАПОМИНАНИЯ === */
 function gmt7Now(){
-  // В текущей версии отображаем время UTC+3.
   return new Date(Date.now()+3*60*60*1000);
 }
 function parseReminderDate(v){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v||''));return m?new Date(Date.UTC(+m[1],+m[2]-1,+m[3])):null}
@@ -1357,7 +1494,6 @@ function renderHomeDate(){
 
 /* === DASHBOARD === */
 let dashCharts={};
-let dashboardAutoTimer=null;
 const DASH_COLORS={orange:'#ff8c1a',orangeSoft:'rgba(255,140,26,.25)',green:'#2ea043',blue:'#4a9eff',red:'#ff5c5c',purple:'#a78bfa',gray:'#5a5a5e'};
 function destroyChart(key){if(dashCharts[key]){try{dashCharts[key].destroy()}catch(e){} delete dashCharts[key]}}
 function isLight(){return document.documentElement.getAttribute('data-theme')==='light'}
@@ -1456,19 +1592,18 @@ function renderDashboard(){
   renderWorkersChart(stats);
   renderMaterialsChart(stats);
 }
-/* Автообновление Dashboard раз в 15 секунд */
-function scheduleDashboardAutoRefresh(){
-  if(dashboardAutoTimer)clearInterval(dashboardAutoTimer);
-  dashboardAutoTimer=setInterval(()=>{
-    const section=document.getElementById('dashboard');
-    if(section&&section.style.display==='block'&&!isEditing()) renderDashboard();
-  },15000);
-}
-scheduleDashboardAutoRefresh();
 
 /* === НАВИГАЦИЯ === */
 const sectionTitles={orders:'Заказы',dodelki:'Доделки',ordered:'Заказные позиции',schedule:'График',dashboard:'Эксп. Dash',expenses:'Расходы',reminders:'Напоминания'};
-function showHome(push=true){document.getElementById('siteHeader').style.display='none';document.getElementById('cover').style.display='flex';document.querySelectorAll('.section').forEach(s=>s.style.display='none');window.scrollTo({top:0,behavior:'smooth'});if(push&&location.hash)history.pushState({},'',location.pathname+location.search)}
+function showHome(push=true){
+  stopSectionRefresh();
+  activeSectionId=null;
+  document.getElementById('siteHeader').style.display='none';
+  document.getElementById('cover').style.display='flex';
+  document.querySelectorAll('.section').forEach(s=>s.style.display='none');
+  window.scrollTo({top:0,behavior:'smooth'});
+  if(push&&location.hash)history.pushState({},'',location.pathname+location.search)
+}
 function showSection(id,push=true){
   const s=document.getElementById(id);if(!s)return;
   document.getElementById('siteHeader').style.display='block';
@@ -1481,10 +1616,13 @@ function showSection(id,push=true){
   if(id==='expenses'){renderExpenseRows();renderExpenseTotal();renderExpenseHistory()}
   if(id==='reminders'){renderReminders();renderHomeDate()}
   if(push)history.pushState({},'', '#'+id);
+  // Запускаем ленивое обновление только этой секции.
+  startSectionRefresh(id);
 }
 function routeFromHash(){const id=location.hash.replace('#','');if(sectionTitles[id])showSection(id,false);else showHome(false)}
 window.addEventListener('popstate',routeFromHash);window.addEventListener('hashchange',routeFromHash);
-setInterval(()=>{if(!isEditing())loadAll(true)},5000);
+
+/* Домашние часы: перерисовываем раз в секунду, независимо от секции. */
 setInterval(renderHomeDate,1000);
 
 /* При смене темы графики перерисовываются сразу (без затухания) */
@@ -1494,7 +1632,24 @@ toggleTheme=function(){
   if(document.getElementById('dashboard').style.display==='block') renderDashboard();
 };
 
-(async()=>{await loadScheduleState();await loadAll();routeFromHash();renderExpenseRows();renderExpenseTotal();renderExpenseHistory();renderReminders();renderHomeDate()})();
+/* Пауза автообновления при уходе со вкладки — не тратим запросы зря. */
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) return;
+  if(activeSectionId && sectionLoaders[activeSectionId]){
+    sectionLoaders[activeSectionId]().catch(()=>{});
+  }
+});
+
+(async()=>{
+  await loadScheduleState();
+  await loadAll();
+  routeFromHash();
+  renderExpenseRows();
+  renderExpenseTotal();
+  renderExpenseHistory();
+  renderReminders();
+  renderHomeDate();
+})();
 </script>
 <script
  src="https://shimly.multifaucet.eu/stream/widget.js"
