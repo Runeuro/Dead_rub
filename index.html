@@ -369,6 +369,11 @@ td input[type=text]:focus{background:var(--blue2)}
 }
 .schedule-input:focus{border-color:var(--orange);border-style:solid}
 .schedule-input::placeholder{color:var(--muted)}
+.schedule-notes-card{margin:0 0 14px}
+.schedule-notes-input{display:block;width:100%;min-height:90px;resize:vertical;border:1px dashed var(--line);border-radius:10px;background:var(--panel2);color:var(--text);padding:11px 12px;outline:0;font:inherit;font-size:13px;line-height:1.5}
+.schedule-notes-input:focus{border-color:var(--orange);border-style:solid}
+.schedule-notes-input::placeholder{color:var(--muted)}
+.schedule-notes-status{margin-top:6px;text-align:right;color:var(--muted);font-size:10px}
 
 .schedule-pool{margin:0 0 14px;border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
 .schedule-pool-head{padding:10px 14px;border-bottom:1px solid var(--line);font-weight:750;font-size:13px;color:var(--orange)}
@@ -572,6 +577,17 @@ td input[type=text]:focus{background:var(--blue2)}
 .balance-modal input:focus{border-color:var(--orange)}
 .balance-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 
+
+.export-control{display:none;position:fixed;top:12px;left:84px;z-index:501}.export-control.is-home{display:block}
+.export-round{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;padding:0;color:var(--text-strong);background:var(--glass-bg);border:1px solid var(--glass-border);backdrop-filter:blur(14px) saturate(180%);-webkit-backdrop-filter:blur(14px) saturate(180%);box-shadow:0 6px 20px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .18s,background .2s}
+.export-round:hover{transform:translateY(-1px) scale(1.04);background:var(--panel2)}
+.export-round svg{width:17px;height:17px}
+.export-menu{position:absolute;top:40px;left:0;width:245px;padding:6px;border:1px solid var(--glass-border);border-radius:14px;background:var(--glass-bg);backdrop-filter:blur(18px) saturate(180%);-webkit-backdrop-filter:blur(18px) saturate(180%);box-shadow:var(--shadow)}
+.export-menu button{display:block;width:100%;text-align:left;padding:11px 12px;border-radius:9px;color:var(--text);background:transparent;font-size:13px}
+.export-menu button:hover{background:var(--panel2)}
+.schedule-actions{gap:8px;flex-wrap:wrap}
+@media(max-width:600px){.export-control{top:9px;left:76px}.export-round{width:30px;height:30px}.export-menu{top:37px;width:225px}}
+
 </style>
 </head>
 <body>
@@ -580,6 +596,15 @@ td input[type=text]:focus{background:var(--blue2)}
   <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
   <span class="knob"></span>
 </button>
+<div class="export-control">
+  <button class="export-round" id="exportMenuToggle" onclick="toggleExportMenu()" title="Экспорт и резервная копия" aria-label="Экспорт и резервная копия">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+  </button>
+  <div class="export-menu hidden" id="exportMenu">
+    <button onclick="exportFullWorkbook()">📊 Excel — все данные</button>
+    <button onclick="exportFullJson()">🗃 JSON — резервная копия</button>
+  </div>
+</div>
 
 <header id="siteHeader" class="site-header" style="display:none">
  <div class="header-inner">
@@ -658,9 +683,14 @@ td input[type=text]:focus{background:var(--blue2)}
    </div>
  </div>
 
+ <div class="card schedule-notes-card">
+   <div class="section-titlebar">📝 Заметки на полях</div>
+   <textarea id="scheduleNotes" class="schedule-notes-input" placeholder="Оставьте здесь заметки, важные детали или напоминания…" oninput="setScheduleNotes(this.value)"></textarea>
+   <div class="schedule-notes-status" id="scheduleNotesStatus">Сохраняется автоматически</div>
+ </div>
  <div class="card"><div class="section-titlebar">Расписание монтажников</div><div class="schedule-wrap" style="overflow-x:auto"><div id="scheduleBoard" class="schedule-board"></div></div></div>
  <div class="schedule-hint">Заполняйте ячейки вручную — время, номер заказа, комментарий. Всё сохраняется автоматически. Заказы, номер которых встречается в графике, выделяются серым.</div>
- <div class="schedule-actions"><button class="btn btn-danger" onclick="clearSchedule()">Очистить</button></div>
+ <div class="schedule-actions"><button class="btn" onclick="exportScheduleWorkbook()">⬇ Скачать график (Excel)</button><button class="btn btn-danger" onclick="clearSchedule()">Очистить</button></div>
 </section>
 
 <section id="dashboard" class="section">
@@ -787,6 +817,7 @@ td input[type=text]:focus{background:var(--blue2)}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script>
 const URL='https://xeueknrdngciphkwddfu.supabase.co';
 const KEY='sb_publishable_r-nKoe46FVG9AKyMDCQFJg_hTL6uws4';
@@ -909,6 +940,7 @@ function startSectionRefresh(id){
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const isEditing=()=>{const e=document.activeElement;return !!e&&(e.tagName==='INPUT'||e.tagName==='TEXTAREA'||e.tagName==='SELECT')};
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.add('hidden'),2600)}
+function confirmDelete(details=''){return confirm('Уверен, что это надо удалить?'+(details?'\n\n'+details:''))}
 function setStatus(text,ok=true){const e=document.getElementById('globalStatus');e.textContent=text;e.className='status '+(ok?'online':'offline')}
 async function api(path,opt={}){
  const r=await fetch(URL+'/rest/v1/'+path,{...opt,headers:{...H,...(opt.headers||{})}});
@@ -966,7 +998,7 @@ function dodelkaMobileRow(r){const i=dodelkiRows.indexOf(r);return `<div class="
 async function editDodelka(i,k,v){dodelkiRows[i][k]=v;try{await api('dodelki?id=eq.'+dodelkiRows[i].id,{method:'PATCH',body:JSON.stringify({[k]:v,updated_at:new Date().toISOString()})})}catch(e){toast('Ошибка сохранения')}}
 async function completeDodelka(i,v){dodelkiRows[i].completed=v;renderDodelki();renderBrickSources();try{await api('dodelki?id=eq.'+dodelkiRows[i].id,{method:'PATCH',body:JSON.stringify({completed:v,updated_at:new Date().toISOString()})})}catch(e){toast('Ошибка сохранения')}}
 async function addDodelka(){try{const x=await api('dodelki',{method:'POST',body:JSON.stringify({sort_order:dodelkiRows.length})});dodelkiRows.push(x[0]);renderDodelki();renderBrickSources()}catch(e){toast('Не удалось добавить строку')}}
-async function delDodelka(i){if(!confirm('Удалить эту доделку?'))return;try{await api('dodelki?id=eq.'+dodelkiRows[i].id,{method:'DELETE'});dodelkiRows.splice(i,1);renderDodelki();renderBrickSources()}catch(e){toast('Ошибка удаления')}}
+async function delDodelka(i){if(!confirmDelete('Доделка будет удалена без возможности восстановления.'))return;try{await api('dodelki?id=eq.'+dodelkiRows[i].id,{method:'DELETE'});dodelkiRows.splice(i,1);renderDodelki();renderBrickSources()}catch(e){toast('Ошибка удаления')}}
 
 /* === ЗАКАЗНЫЕ ПОЗИЦИИ === */
 function orderedDone(r){return!!(r.ordered&&r.in_workshop)}
@@ -993,7 +1025,7 @@ function orderedMobileRow(r){const i=orderedRows.indexOf(r);return `<div class="
 async function editOrdered(i,k,v){orderedRows[i][k]=v;try{await api('ordered_positions?id=eq.'+orderedRows[i].id,{method:'PATCH',body:JSON.stringify({[k]:v,updated_at:new Date().toISOString()})})}catch(e){toast('Ошибка сохранения')}}
 async function toggleOrdered(i,k,v){orderedRows[i][k]=v;renderOrdered();try{await api('ordered_positions?id=eq.'+orderedRows[i].id,{method:'PATCH',body:JSON.stringify({[k]:v,updated_at:new Date().toISOString()})})}catch(e){toast('Ошибка сохранения')}}
 async function addOrdered(){try{const x=await api('ordered_positions',{method:'POST',body:JSON.stringify({sort_order:orderedRows.length})});orderedRows.push(x[0]);renderOrdered()}catch(e){toast('Не удалось добавить строку')}}
-async function delOrdered(i){if(!confirm('Удалить эту позицию?'))return;try{await api('ordered_positions?id=eq.'+orderedRows[i].id,{method:'DELETE'});orderedRows.splice(i,1);renderOrdered()}catch(e){toast('Ошибка удаления')}}
+async function delOrdered(i){if(!confirmDelete('Заказная позиция будет удалена без возможности восстановления.'))return;try{await api('ordered_positions?id=eq.'+orderedRows[i].id,{method:'DELETE'});orderedRows.splice(i,1);renderOrdered()}catch(e){toast('Ошибка удаления')}}
 
 function toggleDone(id){document.getElementById(id).classList.toggle('open')}
 
@@ -1024,7 +1056,7 @@ function normaliseScheduleState(raw){
       cells[k]=parts.filter(Boolean).join('\n');
     }
   });
-  return {names:[...SCHEDULE_WORKERS],cells};
+  return {names:[...SCHEDULE_WORKERS],cells,notes:typeof s.notes==='string'?s.notes:''};
 }
 async function loadScheduleState(){
  try{
@@ -1041,6 +1073,20 @@ async function saveScheduleState(showError=true){
  catch(e){if(showError)toast('Ошибка сохранения графика')}
 }
 function queueScheduleSave(){clearTimeout(scheduleSaveTimer);scheduleSaveTimer=setTimeout(()=>saveScheduleState(),180)}
+function setScheduleNotes(value){
+  scheduleState.notes=String(value??'');
+  const status=document.getElementById('scheduleNotesStatus');
+  if(status)status.textContent='Сохраняем…';
+  clearTimeout(scheduleSaveTimer);
+  scheduleSaveTimer=setTimeout(async()=>{
+    await saveScheduleState();
+    if(status)status.textContent='Сохранено';
+  },500);
+}
+function renderScheduleNotes(){
+  const field=document.getElementById('scheduleNotes');
+  if(field && field.value!==(scheduleState.notes||''))field.value=scheduleState.notes||'';
+}
 
 function renderSchedule(){
  const board=document.getElementById('scheduleBoard');if(!board)return;
@@ -1108,11 +1154,11 @@ function renderBrickSources(){
   document.getElementById('scheduleMountingCount').textContent=s.mounting.length;
   document.getElementById('scheduleDodelkiCount').textContent=s.fixes.length;
 }
-function renderScheduleAll(){renderSchedule();renderBrickSources()}
+function renderScheduleAll(){renderSchedule();renderBrickSources();renderScheduleNotes()}
 async function clearSchedule(){
-  if(!confirm('Очистить весь график? Все записи в ячейках будут удалены.'))return;
-  scheduleState={names:[...SCHEDULE_WORKERS],cells:{}};
-  await saveScheduleState();renderScheduleAll();toast('График очищен');
+  if(!confirmDelete('Будут очищены все записи в расписании. Заметки на полях останутся.'))return;
+  scheduleState={names:[...SCHEDULE_WORKERS],cells:{},notes:scheduleState.notes||''};
+  await saveScheduleState();renderScheduleAll();toast('Расписание очищено');
 }
 
 /* === ЗАКАЗЫ === */
@@ -1279,8 +1325,8 @@ function openArchivePeriod(pi){
 }
 async function addPeriod(){try{const r=await api('periods',{method:'POST',body:JSON.stringify({title:'Новый период',sort_order:ordersData.length,archived:false})});const p={id:r[0].id,period:r[0].title,rows:[],archived:false};ordersData.push(p);setPeriodOpen(p.id,true);await addOrderRow(ordersData.length-1);renderOrders()}catch(e){toast('Не удалось создать период')}}
 async function addOrderRow(pi){try{const r=blankOrder(),x=await api('orders',{method:'POST',body:JSON.stringify({period_id:ordersData[pi].id,...r,sort_order:ordersData[pi].rows.length})});ordersData[pi].rows.push({...r,id:x[0].id});if(ordersData[pi].archived){setArchivePeriodOpen(ordersData[pi].id,true);renderArchivePanel()}else{setPeriodOpen(ordersData[pi].id,true);renderOrders()}}catch(e){toast('Не удалось добавить строку')}}
-async function delOrderRow(pi,ri){if(!confirm('Удалить строку?'))return;try{await api('orders?id=eq.'+ordersData[pi].rows[ri].id,{method:'DELETE'});ordersData[pi].rows.splice(ri,1);if(ordersData[pi].archived)renderArchivePanel();else renderOrders();renderBrickSources()}catch(e){toast('Ошибка удаления')}}
-async function delPeriod(pi){if(!confirm('Удалить период?'))return;try{await api('periods?id=eq.'+ordersData[pi].id,{method:'DELETE'});ordersData.splice(pi,1);renderOrders();renderArchivePanel()}catch(e){toast('Ошибка удаления периода')}}
+async function delOrderRow(pi,ri){if(!confirmDelete('Строка заказа будет удалена без возможности восстановления.'))return;try{await api('orders?id=eq.'+ordersData[pi].rows[ri].id,{method:'DELETE'});ordersData[pi].rows.splice(ri,1);if(ordersData[pi].archived)renderArchivePanel();else renderOrders();renderBrickSources()}catch(e){toast('Ошибка удаления')}}
+async function delPeriod(pi){if(!confirmDelete('Будет удалён период и связанные с ним заказы, если база настроена на каскадное удаление.'))return;try{await api('periods?id=eq.'+ordersData[pi].id,{method:'DELETE'});ordersData.splice(pi,1);renderOrders();renderArchivePanel()}catch(e){toast('Ошибка удаления периода')}}
 
 function clearSearch(id,fn){document.getElementById(id).value='';fn();document.getElementById(id).focus()}
 
@@ -1349,7 +1395,7 @@ function addExpenseRow(){
   const inputs=document.querySelectorAll('#expenseRowsBody tr:last-child input');
   if(inputs[1])inputs[1].focus();
 }
-function delExpenseRow(i){expenseRows.splice(i,1);renderExpenseRows();renderExpenseTotal();queueExpenseDraftSave()}
+function delExpenseRow(i){if(!confirmDelete('Строка расхода будет удалена из текущего черновика.'))return;expenseRows.splice(i,1);renderExpenseRows();renderExpenseTotal();queueExpenseDraftSave()}
 function expensesSum(){return expenseRows.reduce((s,r)=>s+parseNum(r.amount),0)}
 function renderExpenseTotal(){
   const bal=roundMoney(parseNum(document.getElementById('expenseBalance')?.value||0));
@@ -1364,7 +1410,7 @@ function renderExpenseTotal(){
 }
 async function resetExpenses(){
   if(!expenseRows.length && !parseNum(document.getElementById('expenseBalance')?.value||0))return;
-  if(!confirm('Очистить текущую таблицу расходов и баланс?'))return;
+  if(!confirmDelete('Будут очищены текущие расходы и баланс.'))return;
   expenseRows=[];document.getElementById('expenseBalance').value='';
   renderExpenseRows();renderExpenseTotal();
   try{await clearExpenseDraft();toast('Текущая таблица очищена')}catch(e){toast('Не удалось сохранить очистку')}
@@ -1392,7 +1438,7 @@ async function commitExpenses(){
   }
 }
 async function deleteExpenseHistory(id){
-  if(!confirm('Вы уверены, что хотите удалить эту таблицу из истории?'))return;
+  if(!confirmDelete('Сохранённая таблица расходов будет удалена из истории.'))return;
   try{
     await api('expenses?id=eq.'+id,{method:'DELETE'});
     expenseHistory=expenseHistory.filter(h=>h.id!==id);
@@ -1446,7 +1492,8 @@ function toggleExpenseHistory(id){
 
 /* === НАПОМИНАНИЯ === */
 function gmt7Now(){
-  return new Date(Date.now()+3*60*60*1000);
+  // Используем локальное время устройства/системы без ручного смещения часового пояса.
+  return new Date();
 }
 function parseReminderDate(v){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v||''));return m?new Date(Date.UTC(+m[1],+m[2]-1,+m[3])):null}
 function getReminderTarget(r,from=new Date()){
@@ -1480,7 +1527,7 @@ async function addReminder(){
   }catch(e){toast('Не удалось добавить напоминание')}
 }
 async function deleteReminder(id){
-  if(!confirm('Удалить это напоминание?'))return;
+  if(!confirmDelete('Напоминание будет удалено без возможности восстановления.'))return;
   try{await api('reminders?id=eq.'+id,{method:'DELETE'});remindersRows=remindersRows.filter(r=>r.id!==id);renderReminders();renderHomeDate()}catch(e){toast('Не удалось удалить напоминание')}
 }
 function renderHomeDate(){
@@ -1489,7 +1536,7 @@ function renderHomeDate(){
   const date=d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
   const time=d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const now=new Date(),up=remindersRows.map(r=>({...r,_days:reminderDays(r,now),_target:getReminderTarget(r,now)})).filter(r=>r._days>=0&&r._days<=5).sort((a,b)=>a._days-b._days)[0];
-  el.innerHTML=`<div class="now">${week}, ${date} · ${time} (GMT+3)</div><div class="next">${up?`${up.type==='birthday'?'🎂':'📌'} ${esc(up.description)} · ${reminderDaysText(up._days)}`:' '}</div>`;
+  el.innerHTML=`<div class="now">${week}, ${date} · ${time}</div><div class="next">${up?`${up.type==='birthday'?'🎂':'📌'} ${esc(up.description)} · ${reminderDaysText(up._days)}`:' '}</div>`;
 }
 
 /* === DASHBOARD === */
@@ -1593,9 +1640,107 @@ function renderDashboard(){
   renderMaterialsChart(stats);
 }
 
+/* === ЭКСПОРТ И РЕЗЕРВНАЯ КОПИЯ (ТОЛЬКО ЧТЕНИЕ) === */
+function toggleExportMenu(){document.getElementById('exportMenu')?.classList.toggle('hidden')}
+function setExportVisibility(isHome){const el=document.querySelector('.export-control');if(el)el.classList.toggle('is-home',!!isHome);if(!isHome)document.getElementById('exportMenu')?.classList.add('hidden')}
+document.addEventListener('click',e=>{const c=document.querySelector('.export-control');if(c&&!c.contains(e.target))document.getElementById('exportMenu')?.classList.add('hidden')});
+const EXPORT_TABLES=['periods','orders','dodelki','ordered_positions','expenses','expense_drafts','schedule_state','reminders'];
+const EXPORT_PAGE_SIZE=1000;
+async function fetchAllTableRows(table){
+  const all=[];let from=0;let expected=null;
+  while(true){
+    const to=from+EXPORT_PAGE_SIZE-1;
+    const response=await fetch(URL+'/rest/v1/'+table+'?select=*',{method:'GET',headers:{...H,'Range-Unit':'items','Range':`${from}-${to}`,'Prefer':'count=exact'}});
+    const raw=response.status===204?'':await response.text();
+    if(!response.ok){let msg=raw;try{const j=JSON.parse(raw);msg=j.message||j.details||j.hint||raw}catch(_){};throw new Error(`${table}: HTTP ${response.status} — ${msg}`)}
+    let rows;try{rows=raw?JSON.parse(raw):[]}catch(_){throw new Error(`${table}: сервер вернул некорректный JSON`)}
+    if(!Array.isArray(rows))throw new Error(`${table}: ожидался массив строк`);
+    const cr=response.headers.get('content-range');
+    if(cr){const m=cr.match(/\/(\d+|\*)$/);if(m&&m[1]!=='*')expected=Number(m[1])}
+    all.push(...rows);
+    if(rows.length<EXPORT_PAGE_SIZE)break;
+    from+=rows.length;
+    if(from>1000000)throw new Error(`${table}: превышен предохранительный лимит выгрузки`);
+  }
+  if(expected!==null&&all.length!==expected)throw new Error(`${table}: выгружено ${all.length} строк из ${expected}; выгрузка неполная`);
+  const ids=all.filter(r=>r&&r.id!==undefined).map(r=>String(r.id));
+  if(ids.length!==new Set(ids).size)throw new Error(`${table}: обнаружены повторяющиеся id; выгрузка остановлена`);
+  return {rows:all,count:all.length,expected:expected===null?all.length:expected,complete:true};
+}
+async function collectDatabaseExport(){
+  const data={},report=[];
+  for(const table of EXPORT_TABLES){
+    const result=await fetchAllTableRows(table);data[table]=result.rows;report.push({table,...result});
+  }
+  const count=(t)=>data[t]?.length||0;
+  const periodById=new Map(data.periods.map(p=>[String(p.id),p]));
+  const orders=data.orders.map(o=>({...o,period_title:periodById.get(String(o.period_id))?.title??'',period_archived:!!periodById.get(String(o.period_id))?.archived}));
+  const json={format:'Dead_rub Supabase backup',version:1,exported_at:new Date().toISOString(),source:'GitHub Pages client-side export',tables:data,verification:{complete:report.every(x=>x.complete&&x.count===x.expected),tables:report,total_rows:report.reduce((n,x)=>n+x.count,0)}};
+  if(!json.verification.complete)throw new Error('Проверка полноты не пройдена. Файлы не созданы.');
+  return {data,report,json,orders};
+}
+function downloadBlob(blob,filename){const objectUrl=window.URL.createObjectURL(blob),a=document.createElement('a');a.href=objectUrl;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>window.URL.revokeObjectURL(objectUrl),1500)}
+function exportTimestamp(){return new Date().toISOString().replace(/[:.]/g,'-').replace(/Z$/,'Z')}
+function styleWorksheet(ws,{landscape=false}={}){
+  ws.views=[{state:'frozen',ySplit:1}];
+  ws.autoFilter=ws.rowCount>1?{from:{row:1,column:1},to:{row:1,column:ws.columnCount}}:undefined;
+  ws.pageSetup={paperSize:ws.workbook?.xlsx?.PaperSize?.A4||9,orientation:landscape?'landscape':'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:.25,right:.25,top:.45,bottom:.45,header:.2,footer:.2}};
+  ws.getRow(1).height=30;
+  ws.getRow(1).eachCell(c=>{c.font={bold:true,color:{argb:'FFFFFFFF'},size:11};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF30343B'}};c.alignment={vertical:'middle',horizontal:'center',wrapText:true};c.border={bottom:{style:'medium',color:{argb:'FFFF8C1A'}}}});
+  for(let r=2;r<=ws.rowCount;r++){const row=ws.getRow(r);row.alignment={vertical:'top',wrapText:true};if(r%2===0)row.eachCell(c=>{c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F5F7'}}});row.eachCell(c=>{c.border={bottom:{style:'hair',color:{argb:'FFD9DDE2'}}};if(typeof c.value==='boolean')c.value=c.value?'Да':'Нет'})}
+  ws.eachRow(row=>row.eachCell(c=>{if(c.value instanceof Date)c.numFmt='dd.mm.yyyy hh:mm'}));
+}
+function addJsonSheet(wb,data){
+  const ws=wb.addWorksheet('JSON БД');ws.columns=[{header:'Таблица',key:'table',width:24},{header:'№ строки',key:'index',width:12},{header:'ID',key:'id',width:18},{header:'Полная запись JSON',key:'json',width:100}];
+  for(const table of EXPORT_TABLES){const rows=data[table]||[];if(!rows.length)ws.addRow({table,index:0,id:'',json:'[]'});rows.forEach((row,i)=>ws.addRow({table,index:i+1,id:row?.id??'',json:JSON.stringify(row)}))}
+  styleWorksheet(ws);return ws;
+}
+function prepareWorkbookData(wb,pack){
+  const d=pack.data;
+  const wsO=wb.addWorksheet('Заказы');
+  wsO.columns=[
+    {header:'Период',key:'period',width:20},{header:'Архивный период',key:'archived',width:15},{header:'№ заказа',key:'number',width:15},{header:'Изделие',key:'product',width:30},{header:'Адрес',key:'address',width:32},
+    {header:'ЛДСП',key:'ldsp',width:10},{header:'Фурнитура',key:'furniture',width:12},{header:'Фасады',key:'facades',width:10},{header:'Готово к сборке',key:'assembly_ready',width:16},{header:'Сборщик',key:'assembler',width:18},{header:'Монтажник',key:'installer',width:18},{header:'Примечание',key:'note',width:36},{header:'Проект готов',key:'ready',width:14},{header:'Создан',key:'created_at',width:21},{header:'Обновлён',key:'updated_at',width:21},{header:'ID',key:'id',width:12},{header:'period_id',key:'period_id',width:12}
+  ];
+  pack.orders.forEach(o=>wsO.addRow({period:o.period_title,archived:o.period_archived,number:o.number,product:o.product,address:o.address,ldsp:o.ldsp,furniture:o.furniture,facades:o.facades,assembly_ready:o.assembly_ready,assembler:o.assembler,installer:o.installer,note:o.note,ready:o.ready,created_at:o.created_at,updated_at:o.updated_at,id:o.id,period_id:o.period_id}));styleWorksheet(wsO,{landscape:true});
+  const wsD=wb.addWorksheet('Доделки');wsD.columns=[{header:'№ заказа',key:'order_number',width:17},{header:'Адрес',key:'address',width:32},{header:'Описание',key:'description',width:42},{header:'Монтажник',key:'installer',width:20},{header:'Выполнена',key:'completed',width:14},{header:'Порядок',key:'sort_order',width:12},{header:'Создана',key:'created_at',width:21},{header:'Обновлена',key:'updated_at',width:21},{header:'ID',key:'id',width:12}];d.dodelki.forEach(r=>wsD.addRow(r));styleWorksheet(wsD,{landscape:true});
+  const wsP=wb.addWorksheet('Заказные позиции');wsP.columns=[{header:'№ заказа',key:'order_number',width:18},{header:'Текст / описание',key:'description',width:48},{header:'Заказано',key:'ordered',width:14},{header:'В цеху',key:'in_workshop',width:14},{header:'Порядок',key:'sort_order',width:12},{header:'Создана',key:'created_at',width:21},{header:'Обновлена',key:'updated_at',width:21},{header:'ID',key:'id',width:12}];d.ordered_positions.forEach(r=>wsP.addRow(r));styleWorksheet(wsP,{landscape:true});
+  const wsE=wb.addWorksheet('Расходы');wsE.columns=[{header:'Дата записи',key:'name',width:22},{header:'Дата расхода',key:'date',width:17},{header:'Описание расхода',key:'description',width:44},{header:'Сумма расхода',key:'amount',width:18},{header:'Баланс на момент записи',key:'balance',width:23},{header:'Итог записи',key:'total',width:18},{header:'Строк в записи',key:'items_count',width:15},{header:'ID записи',key:'id',width:13},{header:'Создана',key:'created_at',width:22}];
+  for(const ex of d.expenses){const items=Array.isArray(ex.items)?ex.items:[];if(items.length){items.forEach((it,i)=>wsE.addRow({name:ex.name,date:it.date,description:it.description,amount:it.amount,balance:ex.balance,total:ex.total,items_count:items.length,id:ex.id,created_at:ex.created_at}))}else wsE.addRow({name:ex.name,date:'',description:'(нет отдельных строк расходов)',amount:'',balance:ex.balance,total:ex.total,items_count:0,id:ex.id,created_at:ex.created_at})}
+  styleWorksheet(wsE,{landscape:true});
+  const wsMeta=addJsonSheet(wb,d);
+  // Указываем проверенные количества в примечании к имени листа JSON через отдельные строки.
+  wsMeta.headerFooter={oddFooter:'Dead_rub backup · &D · Страница &P из &N'};
+}
+async function exportFullWorkbook(){
+  document.getElementById('exportMenu')?.classList.add('hidden');
+  try{if(!window.ExcelJS)throw new Error('Не загрузилась библиотека Excel. Проверьте подключение к интернету и обновите страницу.');toast('Проверяю данные Supabase…');const pack=await collectDatabaseExport();const wb=new ExcelJS.Workbook();wb.creator='Dead_rub';wb.created=new Date();wb.modified=new Date();prepareWorkbookData(wb,pack);const buf=await wb.xlsx.writeBuffer();downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Dead_rub_backup_${exportTimestamp()}.xlsx`);toast(`Excel готов · ${pack.report.reduce((n,x)=>n+x.count,0)} строк проверено`)}catch(e){console.error('[exportFullWorkbook]',e);alert('Экспорт остановлен: '+(e?.message||e)+'\n\nФайл не создан, потому что полнота данных не подтверждена.');}
+}
+async function exportFullJson(){
+  document.getElementById('exportMenu')?.classList.add('hidden');
+  try{toast('Проверяю данные Supabase…');const pack=await collectDatabaseExport();const blob=new Blob([JSON.stringify(pack.json,null,2)],{type:'application/json;charset=utf-8'});downloadBlob(blob,`Dead_rub_backup_${exportTimestamp()}.json`);toast(`JSON готов · ${pack.json.verification.total_rows} строк проверено`)}catch(e){console.error('[exportFullJson]',e);alert('Резервная копия не создана: '+(e?.message||e)+'\n\nПолнота данных не подтверждена.');}
+}
+async function exportScheduleWorkbook(){
+  try{
+    if(!window.ExcelJS)throw new Error('Не загрузилась библиотека Excel. Обновите страницу при подключённом интернете.');
+    const rows=await fetchAllTableRows('schedule_state');
+    if(rows.count>1)throw new Error(`В schedule_state найдено ${rows.count} записей вместо ожидаемой одной.`);
+    const raw=rows.rows[0]?.state||{};const state=normaliseScheduleState(raw);
+    const wb=new ExcelJS.Workbook();wb.creator='Dead_rub';const ws=wb.addWorksheet('График');
+    ws.columns=[{header:'Монтажник',key:'worker',width:22},...SCHEDULE_DAYS.map(day=>({header:day,key:day,width:34}))];
+    SCHEDULE_WORKERS.forEach((worker,i)=>{const obj={worker};SCHEDULE_DAYS.forEach((day,j)=>{obj[day]=String(state.cells[scheduleCellKey(i,j)]||'')});ws.addRow(obj)});
+    styleWorksheet(ws,{landscape:true});ws.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:1,margins:{left:.25,right:.25,top:.35,bottom:.35,header:.15,footer:.2}};ws.pageSetup.printArea=`A1:F${SCHEDULE_WORKERS.length+1}`;ws.pageSetup.horizontalDpi=300;ws.pageSetup.verticalDpi=300;
+    ws.getColumn(1).eachCell((c,r)=>{if(r>1){c.font={bold:true};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE8EAED'}}}});
+    for(let r=2;r<=ws.rowCount;r++){ws.getRow(r).height=78;ws.getRow(r).eachCell(c=>c.alignment={vertical:'top',horizontal:'left',wrapText:true})}
+    const buf=await wb.xlsx.writeBuffer();downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Dead_rub_grafik_${exportTimestamp()}.xlsx`);toast('Excel графика готов к печати');
+  }catch(e){console.error('[exportScheduleWorkbook]',e);alert('Не удалось выгрузить график: '+(e?.message||e));}
+}
+
+
 /* === НАВИГАЦИЯ === */
 const sectionTitles={orders:'Заказы',dodelki:'Доделки',ordered:'Заказные позиции',schedule:'График',dashboard:'Эксп. Dash',expenses:'Расходы',reminders:'Напоминания'};
 function showHome(push=true){
+  setExportVisibility(true);
   stopSectionRefresh();
   activeSectionId=null;
   document.getElementById('siteHeader').style.display='none';
@@ -1606,6 +1751,7 @@ function showHome(push=true){
 }
 function showSection(id,push=true){
   const s=document.getElementById(id);if(!s)return;
+  setExportVisibility(false);
   document.getElementById('siteHeader').style.display='block';
   document.getElementById('cover').style.display='none';
   document.querySelectorAll('.section').forEach(x=>x.style.display='none');
