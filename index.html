@@ -1551,6 +1551,10 @@ function renderExpenseHistory(){
   openExpenseHistoryIds=new Set([...openExpenseHistoryIds].filter(id=>validIds.has(id)));
   list.innerHTML=expenseHistory.map((h)=>{
     const items=Array.isArray(h.items)?h.items:[];
+    const expenseSum=roundMoney(items.reduce((s,i)=>s+Number(i.amount||0),0));
+    const balanceAfter=roundMoney(Number(h.total||0));
+    const balanceBefore=roundMoney(Number(h.balance||0));
+    const income=roundMoney(balanceBefore+expenseSum-balanceAfter);
     const rows=items.length?items.map(it=>`
       <tr>
         <td style="width:140px">${esc(it.date||'')}</td>
@@ -1560,9 +1564,13 @@ function renderExpenseHistory(){
     return `<div class="expense-history-item ${openExpenseHistoryIds.has(h.id)?'open':''}" id="expHist${h.id}">
       <div class="expense-history-head" role="button" tabindex="0" onclick="toggleExpenseHistory(${h.id})" onkeydown="if(event.key==='Enter'||event.key===' ')toggleExpenseHistory(${h.id})">
         <span class="chevron">›</span>
-        <span>${esc(h.name||'Без названия')}</span>
-        <span class="meta">${items.length} поз.</span>
-        <span class="sum">${fmtMoney(h.total)}</span>
+        <span class="expense-history-date">${esc(h.name||'Без названия')}</span>
+        <span class="expense-history-metrics">
+          <span>Внесено <b>${fmtMoney(income)}</b></span>
+          <span>Расходы <b>${fmtMoney(expenseSum)}</b></span>
+          <span>Баланс <b>${fmtMoney(balanceAfter)}</b></span>
+          <span>${items.length} строк</span>
+        </span>
         <button class="btn btn-sm btn-danger" type="button" onclick="event.stopPropagation();deleteExpenseHistory(${h.id})">Удалить</button>
       </div>
       <div class="expense-history-body">
@@ -1570,16 +1578,10 @@ function renderExpenseHistory(){
           <thead><tr><th>Дата</th><th>Описание</th><th style="text-align:right">Сумма</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        <div class="expense-history-footer">
-          <span>Баланс: <b>${fmtMoney(h.balance)}</b></span>
-          <span>Сумма расходов: <b>${fmtMoney(items.reduce((s,i)=>s+Number(i.amount||0),0))}</b></span>
-          <span>Итог: <b style="color:var(--orange)">${fmtMoney(h.total)}</b></span>
-        </div>
       </div>
     </div>`;
   }).join('');
-}
-function toggleExpenseHistory(id){
+}function toggleExpenseHistory(id){
   const el=document.getElementById('expHist'+id);if(!el)return;
   const open=!el.classList.contains('open');
   el.classList.toggle('open',open);
@@ -1956,3 +1958,11 @@ document.addEventListener('visibilitychange',()=>{
 </script>
 </body>
 </html>
+<style>
+.expense-history-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.expense-history-date{font-weight:650;white-space:nowrap}
+.expense-history-metrics{display:flex;align-items:center;gap:14px;flex:1;min-width:260px;flex-wrap:wrap;color:var(--muted,#999);font-size:.88em}
+.expense-history-metrics span{white-space:nowrap}
+.expense-history-metrics b{color:var(--orange);font-weight:650;margin-left:4px}
+@media(max-width:760px){.expense-history-metrics{gap:7px 12px;font-size:.82em}.expense-history-head{align-items:flex-start}.expense-history-date{width:100%}}
+</style>
