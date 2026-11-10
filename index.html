@@ -1512,7 +1512,7 @@ async function confirmBalanceDeposit(){
   const name=now.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'})+' '+now.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
   try{
     if(items.length){
-      await api('expenses',{method:'POST',body:JSON.stringify({name,balance:balanceBeforeExpenses,items,total:newBalance})});
+      await api('expenses',{method:'POST',body:JSON.stringify({name,income:add,balance:balanceBeforeExpenses,items,total:newBalance})});
       expenseRows=[];
     }
     expenseBaseBalance=newBalance;
@@ -1554,7 +1554,8 @@ function renderExpenseHistory(){
     const expenseSum=roundMoney(items.reduce((s,i)=>s+Number(i.amount||0),0));
     const balanceAfter=roundMoney(Number(h.total||0));
     const balanceBefore=roundMoney(Number(h.balance||0));
-    const income=roundMoney(balanceBefore+expenseSum-balanceAfter);
+    const income=h.income!==undefined&&h.income!==null?roundMoney(Number(h.income)):roundMoney(balanceBefore+expenseSum-balanceAfter);
+    const incomeLabel=h.income!==undefined&&h.income!==null?'':'*';
     const rows=items.length?items.map(it=>`
       <tr>
         <td style="width:140px">${esc(it.date||'')}</td>
@@ -1566,7 +1567,7 @@ function renderExpenseHistory(){
         <span class="chevron">›</span>
         <span class="expense-history-date">${esc(h.name||'Без названия')}</span>
         <span class="expense-history-metrics">
-          <span>Внесено <b>${fmtMoney(income)}</b></span>
+          <span>Внесено <b>${fmtMoney(income)}${incomeLabel}</b></span>
           <span>Расходы <b>${fmtMoney(expenseSum)}</b></span>
           <span>Баланс <b>${fmtMoney(balanceAfter)}</b></span>
           <span>${items.length} строк</span>
@@ -1832,7 +1833,7 @@ function prepareWorkbookData(wb,pack){
   const wsD=wb.addWorksheet('Доделки');wsD.columns=[{header:'№ заказа',key:'order_number',width:17},{header:'Адрес',key:'address',width:32},{header:'Описание',key:'description',width:42},{header:'Монтажник',key:'installer',width:20},{header:'Выполнена',key:'completed',width:14},{header:'Порядок',key:'sort_order',width:12},{header:'Создана',key:'created_at',width:21},{header:'Обновлена',key:'updated_at',width:21},{header:'ID',key:'id',width:12}];d.dodelki.forEach(r=>wsD.addRow(r));styleWorksheet(wsD,{landscape:true});
   const wsP=wb.addWorksheet('Заказные позиции');wsP.columns=[{header:'№ заказа',key:'order_number',width:18},{header:'Текст / описание',key:'description',width:48},{header:'Заказано',key:'ordered',width:14},{header:'В цеху',key:'in_workshop',width:14},{header:'Порядок',key:'sort_order',width:12},{header:'Создана',key:'created_at',width:21},{header:'Обновлена',key:'updated_at',width:21},{header:'ID',key:'id',width:12}];d.ordered_positions.forEach(r=>wsP.addRow(r));styleWorksheet(wsP,{landscape:true});
   const wsE=wb.addWorksheet('Расходы');wsE.columns=[{header:'Дата записи',key:'name',width:22},{header:'Дата расхода',key:'date',width:17},{header:'Описание расхода',key:'description',width:44},{header:'Сумма расхода',key:'amount',width:18},{header:'Баланс на момент записи',key:'balance',width:23},{header:'Итог записи',key:'total',width:18},{header:'Строк в записи',key:'items_count',width:15},{header:'ID записи',key:'id',width:13},{header:'Создана',key:'created_at',width:22}];
-  for(const ex of d.expenses){const items=Array.isArray(ex.items)?ex.items:[];if(items.length){items.forEach((it,i)=>wsE.addRow({name:ex.name,date:it.date,description:it.description,amount:it.amount,balance:ex.balance,total:ex.total,items_count:items.length,id:ex.id,created_at:ex.created_at}))}else wsE.addRow({name:ex.name,date:'',description:'(нет отдельных строк расходов)',amount:'',balance:ex.balance,total:ex.total,items_count:0,id:ex.id,created_at:ex.created_at})}
+  for(const ex of d.expenses){const items=Array.isArray(ex.items)?ex.items:[];if(items.length){items.forEach((it,i)=>wsE.addRow({name:ex.name,income:ex.income,date:it.date,description:it.description,amount:it.amount,balance:ex.balance,total:ex.total,items_count:items.length,id:ex.id,created_at:ex.created_at}))}else wsE.addRow({name:ex.name,income:ex.income,date:'',description:'(нет отдельных строк расходов)',amount:'',balance:ex.balance,total:ex.total,items_count:0,id:ex.id,created_at:ex.created_at})}
   styleWorksheet(wsE,{landscape:true});
   const wsMeta=addJsonSheet(wb,d);
   // Указываем проверенные количества в примечании к имени листа JSON через отдельные строки.
